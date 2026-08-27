@@ -1,0 +1,58 @@
+schema_version: 1
+environment: local
+
+authentication:
+  header: X-Voice-Analysis-Key
+  secret_env: VOICEANALYSIS_API_KEY
+  health_requires_auth: false
+
+services:
+  voice_embedding:
+    listen: 0.0.0.0:8077
+    local_base_url: http://127.0.0.1:8077
+    container_base_url: http://voice-embedding:8077
+    health_path: /health
+    operation_path: /embed
+    backend: speechbrain_ecapa
+    model_env: ECAPA_MODEL_DIR
+    sample_rate: 16000
+    embedding_dimension: 192
+    limits:
+      max_request_bytes: 33554432
+      queue_requests: 4
+      queue_bytes: 134217728
+      batch_windows: 16
+      batch_audio_seconds: 60
+      microbatch_wait_ms: 10
+  window_refine:
+    listen: 0.0.0.0:8078
+    local_base_url: http://127.0.0.1:8078
+    container_base_url: http://window-refine:8078
+    health_path: /health
+    operation_path: /segment
+    backend: pyannote_segmentation
+    model_env: PYANNOTE_SEGMENTATION_MODEL_DIR
+    legacy_osd_enabled: false
+    sample_rate: 16000
+    device: cpu
+
+models:
+  ecapa:
+    source: speechbrain/spkrec-ecapa-voxceleb
+    local_dir: runtime/models/ecapa/spkrec-ecapa-voxceleb
+    online_download_default: false
+  segmentation:
+    source: pyannote/segmentation-3.0
+    local_dir: runtime/models/pyannote/segmentation-3.0
+    online_download_default: false
+  overlapped_speech_detection:
+    source: pyannote/overlapped-speech-detection
+    local_dir: runtime/models/pyannote/overlapped-speech-detection
+    enabled: false
+
+runtime:
+  audio_root: runtime/audio
+  temporary_root: runtime/tmp
+  log_root: runtime/logs
+  persist_embeddings: false
+  cross_recording_identity: false
