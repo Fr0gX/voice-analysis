@@ -37,3 +37,14 @@ LLM、腾讯 ASR、数据库、Redis、SAP、企业微信、COS/NFS 和 Smart Ba
 模型文件不进入普通 Git。当前本地权重由相邻 Smart Badge 历史资产恢复，来源提交、文件大小和 SHA256 统一记录在 `config/model-manifest.json`；`scripts/install-models-from-smart-badge.ps1` 可重复安装并校验，`scripts/verify-models.ps1` 只做完整性检查。
 
 当前 ECAPA 和 segmentation-3.0 权重已经完成本地 SHA256 校验。旧 OSD pipeline 仍默认关闭，没有把它作为服务 ready 的前提。
+
+## M1 基础评测
+
+`config/evaluation.yaml` 是 M1 基础评测的版本化默认配置，包含：
+
+- 最低录音数量、总时长和必需场景；
+- 评分帧、collar、重叠计分、宏平均和 speaker 映射方法；
+- DER、JER、说话人数、句段归属准确率及 `unknown` 覆盖率门槛；
+- 配置摘要、数据集构成和逐指标结论的报告要求。
+
+评测入口可以显式指定其他配置文件，但必须把最终 Profile、配置摘要和实际数据集构成写入报告。此配置只裁决验收结果，不覆盖算法资产中的权威阈值；修改默认门槛仍需进入版本管理并留下需求和评测记录。

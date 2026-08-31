@@ -1,0 +1,47 @@
+schema_version: 1
+
+profile:
+  id: m1_baseline_v1
+  status: active
+
+scoring:
+  frame_ms: 100
+  collar_ms: 250
+  score_overlap: true
+  averaging: macro_recording
+  speaker_mapping: optimal_permutation
+  unknown_policy: count_as_unassigned
+
+dataset:
+  minimum_recordings: 20
+  minimum_total_duration_ms: 3600000
+  required_scenarios:
+    single_speaker: 3
+    two_speaker: 3
+    multi_speaker: 3
+    overlap: 3
+    noisy_or_far_field: 3
+  preferred_public_sources:
+    - primock57
+    - aishell4
+    - alimeeting
+  conditional_public_sources:
+    - id: magicdata_ramc
+      condition: noncommercial_use_only
+
+gates:
+  all_required: true
+  der_max: 0.30
+  jer_max: 0.40
+  speaker_count_exact_accuracy_min: 0.80
+  speaker_count_mae_max: 0.30
+  assigned_segment_accuracy_min: 0.85
+  non_unknown_coverage_min: 0.80
+  unknown_rate_max: 0.20
+
+reporting:
+  include_profile_version: true
+  include_config_digest: true
+  include_dataset_composition: true
+  include_per_metric_gate_result: true
+  insufficient_dataset_status: insufficient_dataset
