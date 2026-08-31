@@ -2,7 +2,7 @@
 
 状态：current
 
-核验日期：2026-08-27
+核验日期：2026-08-31
 
 ## 前置
 
@@ -30,7 +30,14 @@
 
 ## 模型
 
-默认离线运行。将有明确来源和许可的模型文件放入 `docs/configuration.md` 指定目录。只有明确取得 Hugging Face gated 模型权限时，才临时填写 token 并开启下载；不要把 token、模型或缓存提交到 Git。
+默认离线运行。当前相邻 Smart Badge 历史资产可用时，从仓库根目录执行：
+
+```powershell
+./scripts/install-models-from-smart-badge.ps1
+./scripts/verify-models.ps1
+```
+
+脚本只把清单内文件复制到被 Git 忽略的 `runtime/models`，并校验大小和 SHA256。只有明确取得 Hugging Face gated 模型权限时，才临时填写 token 并开启下载；不要把 token、模型或缓存提交到 Git。
 
 ## 验证
 
@@ -38,8 +45,31 @@
 ./scripts/verify-workspace.ps1
 ```
 
-未实现服务代码前，验证只检查目录、配置、秘密存在性、Python 版本、FFmpeg 和模型就绪情况。模型缺失会报告 `not-ready`，不会被当成已可启动。
+验证检查目录、配置、秘密、Python 版本、FFmpeg、服务源码和模型完整性。模型缺失会报告 `not-ready`，不会被当成已可启动。
 
-## 启动边界
+## 启动与停止
 
-当前没有服务实现入口，因此不要占用 8077/8078 或建立虚假健康响应。代码实现后应分别由两个环境启动，并在服务实际加载模型后再让 `/health` 返回 ready。
+分别以前台方式启动：
+
+```powershell
+./scripts/start-voice-embedding.ps1
+./scripts/start-window-refine.ps1
+```
+
+联合后台启动、等待真实模型 ready、执行探针并停止：
+
+```powershell
+./scripts/start-local-services.ps1
+./scripts/smoke-services.ps1
+./scripts/stop-local-services.ps1
+```
+
+联合启动器只记录并管理本次创建的两个 PID，日志写入 `runtime/logs`。不要用该脚本停止其他端口或其他项目进程。
+
+## 测试
+
+```powershell
+./scripts/test-services.ps1
+```
+
+ECAPA 私有 parity 语料没有迁入，对应测试会跳过。组件测试和合成波形探针不能替代真实业务录音准确率评测。

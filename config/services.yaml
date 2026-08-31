@@ -12,6 +12,7 @@ services:
     local_base_url: http://127.0.0.1:8077
     container_base_url: http://voice-embedding:8077
     health_path: /health
+    ready_path: /health/ready
     operation_path: /embed
     backend: speechbrain_ecapa
     model_env: ECAPA_MODEL_DIR
@@ -29,6 +30,7 @@ services:
     local_base_url: http://127.0.0.1:8078
     container_base_url: http://window-refine:8078
     health_path: /health
+    ready_path: /health/ready
     operation_path: /segment
     backend: pyannote_segmentation
     model_env: PYANNOTE_SEGMENTATION_MODEL_DIR

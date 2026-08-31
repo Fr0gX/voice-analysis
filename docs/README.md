@@ -5,11 +5,17 @@
 建立日期：2026-08-27
 
 - [需求记录](requirements/2026-08-27.md)
+- [2026-08-31 资产迁移与可运行基线需求](requirements/2026-08-31.md)
+- [2026-08-31 仓库协作规则与 README 需求](requirements/2026-08-31.md#req-003-仓库协作规则迁移与-readme-收敛)
+- [完整产品链开发范围与里程碑需求](requirements/2026-08-31.md#req-004-完整产品链开发范围与里程碑收敛)
 - [系统边界](architecture/system.md)
 - [HTTP 契约](contracts/http-api.md)
+- [项目现状、开发范围与里程碑](../PROJECT_STATUS.md)
 - [配置与密钥](configuration.md)
 - [本地环境手册](operations/local-development.md)
+- [文档职责与写入规则](governance/document-architecture.md)
 - [Smart Badge 历史来源](history/smart-badge-source.md)
 - [开发记录](development/2026-08-27.md)
+- [2026-08-31 开发记录](development/2026-08-31.md)
 
 `docs/history` 仅用于保存从 Smart Badge 退役链路提取的历史依据，不直接裁决本服务的现行实现。

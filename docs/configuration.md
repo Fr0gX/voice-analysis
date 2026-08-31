@@ -2,7 +2,7 @@
 
 状态：current
 
-核验日期：2026-08-27
+核验日期：2026-08-31
 
 ## 地址
 
@@ -34,4 +34,6 @@ LLM、腾讯 ASR、数据库、Redis、SAP、企业微信、COS/NFS 和 Smart Ba
 | Segmentation 3.0 | `runtime/models/pyannote/segmentation-3.0` | `pyannote/segmentation-3.0` |
 | OSD（默认关闭） | `runtime/models/pyannote/overlapped-speech-detection` | `pyannote/overlapped-speech-detection` |
 
-模型文件不进入普通 Git。若未来使用 Git LFS，必须先记录来源许可、SHA256 和模型版本，不能只提交匿名大文件。
+模型文件不进入普通 Git。当前本地权重由相邻 Smart Badge 历史资产恢复，来源提交、文件大小和 SHA256 统一记录在 `config/model-manifest.json`；`scripts/install-models-from-smart-badge.ps1` 可重复安装并校验，`scripts/verify-models.ps1` 只做完整性检查。
+
+当前 ECAPA 和 segmentation-3.0 权重已经完成本地 SHA256 校验。旧 OSD pipeline 仍默认关闭，没有把它作为服务 ready 的前提。

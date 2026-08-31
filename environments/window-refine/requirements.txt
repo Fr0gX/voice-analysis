@@ -1,9 +1,10 @@
 fastapi>=0.110.0,<1
 uvicorn>=0.29.0,<1
 pydantic>=2.6.0,<3
-numpy>=1.24.0
+numpy==2.2.6
 miniaudio>=1.71
 pyannote.audio>=4.0.4,<5
 torch==2.11.0
 torchaudio==2.11.0
 huggingface-hub>=1.0.0
+pytest>=8.0.0,<9

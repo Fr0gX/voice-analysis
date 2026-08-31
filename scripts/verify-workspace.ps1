@@ -8,7 +8,11 @@ $warnings = [System.Collections.Generic.List[string]]::new()
 
 foreach ($relative in @(
     '.env', '.env.example', 'config/services.yaml',
-    '.venv-embedding/Scripts/python.exe', '.venv-refine/Scripts/python.exe'
+    'config/model-manifest.json',
+    '.venv-embedding/Scripts/python.exe', '.venv-refine/Scripts/python.exe',
+    'voice_embedding_service/app.py', 'window_refine_service/app.py',
+    'scripts/start-voice-embedding.ps1', 'scripts/start-window-refine.ps1',
+    'scripts/start-local-services.ps1', 'scripts/stop-local-services.ps1'
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $relative))) {
         $failures.Add("missing: $relative")
@@ -34,6 +38,15 @@ foreach ($relative in @(
     $files = @(Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne '.gitkeep' })
     if ($files.Count -eq 0) {
         $warnings.Add("model not-ready: $relative")
+    }
+}
+
+if ($warnings.Count -eq 0) {
+    try {
+        & (Join-Path $PSScriptRoot 'verify-models.ps1') | Out-Null
+    }
+    catch {
+        $failures.Add("model manifest verification failed: $($_.Exception.Message)")
     }
 }
 
