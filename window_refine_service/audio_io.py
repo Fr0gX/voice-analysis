@@ -45,6 +45,59 @@ def load_audio(path: str | Path, *, target_sample_rate: int = 16000) -> PcmAudio
     return PcmAudio(samples=raw, sample_rate=target_sample_rate, duration_ms=duration_ms)
 
 
+def audio_duration_ms(path: str | Path) -> int:
+    p = Path(path)
+    if p.suffix.lower() == ".wav" or _is_riff_wav(p):
+        try:
+            with contextlib.closing(wave.open(str(p), "rb")) as wf:
+                return wf.getnframes() * 1000 // wf.getframerate()
+        except (wave.Error, EOFError, ZeroDivisionError):
+            pass
+    return load_audio(p).duration_ms
+
+
+def load_audio_region(
+    path: str | Path,
+    start_ms: int,
+    end_ms: int,
+    *,
+    target_sample_rate: int = 16000,
+) -> PcmAudio:
+    """Read only one region from a seekable WAV; compressed legacy inputs fall back to full decode."""
+    p = Path(path)
+    start_ms = max(0, int(start_ms))
+    end_ms = max(start_ms, int(end_ms))
+    if p.suffix.lower() != ".wav" and not _is_riff_wav(p):
+        return load_audio(p, target_sample_rate=target_sample_rate).slice_ms(start_ms, end_ms)
+    try:
+        with contextlib.closing(wave.open(str(p), "rb")) as wf:
+            channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            source_rate = wf.getframerate()
+            total_frames = wf.getnframes()
+            start_frame = min(total_frames, start_ms * source_rate // 1000)
+            end_frame = min(total_frames, end_ms * source_rate // 1000)
+            wf.setpos(start_frame)
+            raw = wf.readframes(max(0, end_frame - start_frame))
+    except (wave.Error, EOFError):
+        return load_audio(p, target_sample_rate=target_sample_rate).slice_ms(start_ms, end_ms)
+    if sampwidth == 1:
+        raw = audioop.lin2lin(raw, 1, 2)
+        sampwidth = 2
+    elif sampwidth == 4:
+        raw = audioop.lin2lin(raw, 4, 2)
+        sampwidth = 2
+    if channels == 2:
+        raw = audioop.tomono(raw, sampwidth, 0.5, 0.5)
+    elif channels > 2:
+        frame_bytes = channels * sampwidth
+        raw = b"".join(raw[i : i + sampwidth] for i in range(0, len(raw), frame_bytes))
+    if source_rate != target_sample_rate:
+        raw, _ = audioop.ratecv(raw, 2, 1, source_rate, target_sample_rate, None)
+    duration_ms = (len(raw) // 2) * 1000 // target_sample_rate
+    return PcmAudio(samples=raw, sample_rate=target_sample_rate, duration_ms=duration_ms)
+
+
 def frame_iter(audio: PcmAudio, frame_ms: int = 30):
     import struct
 

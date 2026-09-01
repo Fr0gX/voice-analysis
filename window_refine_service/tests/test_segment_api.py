@@ -139,6 +139,33 @@ def test_segment_requires_api_key_and_rejects_path_escape(tmp_path: Path) -> Non
     assert escaped.status_code == 400
 
 
+def test_segment_allows_only_configured_temporary_root(tmp_path: Path) -> None:
+    audio_root = tmp_path / "audio"
+    temporary_root = tmp_path / "temporary"
+    audio_root.mkdir()
+    temporary_root.mkdir()
+    audio = temporary_root / "normalized.wav"
+    _write_wav(audio)
+    client = TestClient(create_app(
+        config=_config(audio_root, temporary_root=temporary_root),
+        backend=_FakeBackend(),
+    ))
+
+    response = client.post(
+        "/segment",
+        headers={"X-Voice-Analysis-Key": _API_KEY},
+        json={
+            "audio_path": str(audio),
+            "asr_candidate_windows": [
+                {"candidate_id": "asr_candidate_000", "start_ms": 0, "end_ms": 1000}
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
 def test_health_reports_model_unavailable() -> None:
     client = TestClient(create_app(config=ServiceConfig(), backend=_MissingBackend()))
 

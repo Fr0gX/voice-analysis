@@ -1,0 +1,128 @@
+schema_version: 1
+profile:
+  id: m1_analysis_v1
+  status: active
+
+input:
+  supported_formats:
+    - wav
+    - pcm
+    - mp3
+    - flac
+    - m4a
+    - aac
+    - ogg
+    - vorbis
+    - opus
+    - webm
+    - amr_nb
+    - amr_wb
+    - 3gp
+  maximum_file_bytes: 1073741824
+  minimum_duration_ms: 400
+  maximum_duration_ms: 14400000
+  target_sample_rate: 16000
+  target_channels: 1
+  target_sample_format: s16le
+  segment_order: stable_start_time
+  allow_overlap: true
+  allow_empty_text: true
+  accept_asr_speaker: true
+  echo_asr_speaker: true
+
+components:
+  window_refine:
+    base_url: http://127.0.0.1:8078
+    ready_path: /health/ready
+    operation_path: /segment
+    connect_timeout_sec: 10
+  voice_embedding:
+    base_url: http://127.0.0.1:8077
+    ready_path: /health/ready
+    operation_path: /embed
+    connect_timeout_sec: 10
+
+failure_policy:
+  systemic_component_failure: fail
+  individual_window_failure: partial
+  individual_segment_failure: partial
+
+exports:
+  json: true
+  txt: true
+  srt: true
+  vtt: true
+  include_confidence: false
+  include_reason: false
+  include_risk: false
+
+runtime:
+  temporary_root: runtime/tmp
+  memory_budget_bytes: null
+  memory_target_ratio: 0.80
+  memory_hard_limit_ratio: 0.90
+  dense_nme_max_bytes: 67108864
+  pcm_read_chunk_ms: 30000
+
+# 本节是 REQ-005 确认的 M1 权威算法基线。外部覆盖文件不得修改本节。
+algorithm:
+  profile_id: smart_badge_gold_window_cluster_v1
+  candidate:
+    max_join_gap_ms: 500
+  window_refine:
+    edge_trim_ms: 200
+    min_trimmed_ms: 1200
+    min_speech_ratio: 0.75
+    max_loudness_std_db: 10.0
+    speech_db_threshold: -45.0
+  window_score:
+    hard_min_duration_ms: 1200
+    hard_min_speech_ratio: 0.65
+    hard_min_loudness_db: -50.0
+    accepted_min_score: 65.0
+    clean_min_score: 80.0
+  embedding:
+    sentence_min_clip_ms: 1500
+    service_min_clip_ms: 400
+    maximum_clip_ms: 30000
+    dimension: 192
+    batch_windows: 16
+    batch_audio_seconds: 60
+    maximum_request_bytes: 33554432
+  clustering:
+    enabled: true
+    minimum_k: 1
+    maximum_k: 6
+    clean_weight: 1.0
+    usable_weight: 0.70
+    nme_neighbors: [1, 2, 3, 5, 8]
+    affinity_gamma: 2.0
+    single_cluster_min_median_cosine: 0.62
+    kmeans_n_init: 20
+    random_seed: 0
+    core_quantile: 0.70
+    boundary_quantile: 0.90
+    candidate_k_penalty: 0.04
+    version: gold_window_cluster_v1
+  assignment:
+    strong_relative_margin: 0.35
+    normal_relative_margin: 0.20
+    tentative_relative_margin: 0.12
+    medoid_penalty: 0.02
+    recall_enabled: true
+    recall_min_duration_ms: 2000
+    recall_risk_distance: 0.42
+    recall_min_speech_ratio: 0.45
+    recall_max_loudness_std_db: 18.0
+    recall_min_loudness_db: -55.0
+    recall_good_min_duration_ms: 5000
+    recall_good_min_speech_ratio: 0.65
+    recall_good_max_loudness_std_db: 12.0
+    recall_soft_relative_margin: 0.18
+    recall_soft_margin: 0.08
+    recall_high_risk_relative_margin: 0.10
+    recall_high_risk_margin: 0.04
+    recall_accept_radius_slack: 0.08
+    recall_soft_max_distance: 0.62
+    recall_hard_max_distance: 0.70
+    policy_version: segment_assignment_v2

@@ -51,6 +51,7 @@ class SegmentResponse(BaseModel):
     success: bool
     backend: str
     speech_window_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    candidate_results: list[dict[str, Any]] = Field(default_factory=list)
     audit: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -88,18 +89,26 @@ def create_app(
 
     def resolve_audio_path(raw: str) -> str:
         audio_root = cfg.audio_root.resolve()
+        temporary_root = cfg.temporary_root.resolve()
         requested = Path(raw)
         if requested.is_absolute():
             resolved = requested.resolve()
         else:
             cwd_candidate = (Path.cwd() / requested).resolve()
-            resolved = (
-                cwd_candidate
-                if cwd_candidate == audio_root or audio_root in cwd_candidate.parents
-                else (audio_root / requested).resolve()
-            )
-        if resolved != audio_root and audio_root not in resolved.parents:
-            raise HTTPException(status_code=400, detail="audio_path must be inside VOICEANALYSIS_AUDIO_ROOT")
+            if cwd_candidate == audio_root or audio_root in cwd_candidate.parents:
+                resolved = cwd_candidate
+            elif cwd_candidate == temporary_root or temporary_root in cwd_candidate.parents:
+                resolved = cwd_candidate
+            else:
+                resolved = (audio_root / requested).resolve()
+        allowed = (
+            resolved == audio_root
+            or audio_root in resolved.parents
+            or resolved == temporary_root
+            or temporary_root in resolved.parents
+        )
+        if not allowed:
+            raise HTTPException(status_code=400, detail="audio_path must be inside an allowed Voice Analysis runtime root")
         if not resolved.is_file():
             raise HTTPException(status_code=400, detail="audio_path does not exist")
         return str(resolved)
@@ -148,10 +157,16 @@ def create_app(
                     profile=req.profile,
                     speech_db_threshold=float(req.speech_db_threshold),
                 )
+            candidate_results = list(audit.get("candidate_results") or [])
+            all_failed = bool(req.asr_candidate_windows) and bool(candidate_results) and all(
+                str(row.get("status") or "") == "inference_failed"
+                for row in candidate_results
+            )
             return SegmentResponse(
-                success=True,
+                success=not all_failed,
                 backend=getattr(refine_backend, "backend_name", cfg.backend),
                 speech_window_candidates=windows,
+                candidate_results=candidate_results,
                 audit=audit,
             )
         except Exception as exc:  # noqa: BLE001
@@ -160,6 +175,7 @@ def create_app(
                 success=False,
                 backend=getattr(refine_backend, "backend_name", cfg.backend),
                 speech_window_candidates=[],
+                candidate_results=[],
                 audit={
                     "error": f"{type(exc).__name__}: {exc}",
                     "model_ready": bool(getattr(refine_backend, "loaded", False)),

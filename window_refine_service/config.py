@@ -8,6 +8,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_MODEL_ROOT = _REPO_ROOT / "runtime" / "models" / "pyannote"
 _DEFAULT_AUDIO_ROOT = _REPO_ROOT / "runtime" / "audio"
+_DEFAULT_TEMPORARY_ROOT = _REPO_ROOT / "runtime" / "tmp"
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class ServiceConfig:
     allow_model_download: bool = False
     hf_token_env: str = "HUGGINGFACE_ACCESS_TOKEN"
     audio_root: Path = _DEFAULT_AUDIO_ROOT
+    temporary_root: Path = _DEFAULT_TEMPORARY_ROOT
     api_key: str = ""
     auth_header: str = "X-Voice-Analysis-Key"
 
@@ -53,6 +55,7 @@ class ServiceConfig:
             allow_model_download=os.getenv("WINDOW_REFINE_ALLOW_MODEL_DOWNLOAD", "0") == "1",
             hf_token_env=os.getenv("PYANNOTE_AUTH_TOKEN_ENV", "HUGGINGFACE_ACCESS_TOKEN"),
             audio_root=Path(os.getenv("VOICEANALYSIS_AUDIO_ROOT", str(_DEFAULT_AUDIO_ROOT))),
+            temporary_root=Path(os.getenv("VOICEANALYSIS_TEMPORARY_ROOT", str(_DEFAULT_TEMPORARY_ROOT))),
             api_key=os.getenv("VOICEANALYSIS_API_KEY", ""),
             auth_header=os.getenv("VOICEANALYSIS_AUTH_HEADER", "X-Voice-Analysis-Key"),
         )

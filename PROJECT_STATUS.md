@@ -1,8 +1,8 @@
 # Voice Analysis 项目现状与开发需求
 
-状态：底层模型服务可运行；统一说话人分离产品链待开发
+状态：M1 单录音分析引擎与底层模型服务可运行；M2 异步任务系统和 M3 Web 待开发
 
-核验日期：2026-08-31
+核验日期：2026-09-01
 
 ## 1. 产品目标
 
@@ -32,6 +32,7 @@ voiceanalysis/
   .env.example                 无密配置模板
   config/
     services.yaml              两个模型服务和运行目录配置
+    analysis.yaml              M1 输入、组件、导出、资源和锁定算法配置
     model-manifest.json        模型来源、版本、大小和 SHA256
     evaluation.yaml            M1 基础评测规模、评分策略和验收门槛
   docs/
@@ -42,6 +43,7 @@ voiceanalysis/
     development/               实施与验证记录
     history/                   Smart Badge 历史来源
   environments/
+    analysis-engine/           M1 轻量编排、聚类和评测依赖
     voice-embedding/           ECAPA 独立依赖和锁文件
     window-refine/             pyannote 独立依赖和锁文件
   runtime/
@@ -50,6 +52,7 @@ voiceanalysis/
     logs/                      本地服务日志；Git 忽略
     tmp/                       PID、临时产物；Git 忽略
   scripts/                     初始化、模型安装、启动、停止和验证脚本
+  voice_analysis_engine/       M1 编排、算法、CLI、导出、评测和测试
   voice_embedding_service/     8077 SpeechBrain ECAPA 服务和测试
   window_refine_service/       8078 pyannote 窗口细化服务和测试
 ```
@@ -58,15 +61,16 @@ voiceanalysis/
 
 | 资产 | 当前状态 | 已验证事实 |
 | --- | --- | --- |
-| Python | 两套 CPython 3.11 隔离环境 | 依赖实际导入通过 |
+| Python | 三套 CPython 3.11 隔离环境 | 模型环境相互隔离；分析环境不加载 Torch；依赖实际导入通过 |
 | ECAPA | SpeechBrain 1.1.0、Torch/Torchaudio 2.11 | 模型加载成功；输出 192 维 L2 归一化向量 |
 | pyannote | pyannote.audio 4.0.7、segmentation-3.0 | 模型加载成功；真实 `/segment` 推理成功 |
 | 模型权重 | 位于 `runtime/models` | 10 个文件的大小和 SHA256 与清单一致 |
 | 8077 | `/health`、`/health/ready`、`/embed` | ready 和真实 PCM 推理通过 |
-| 8078 | `/health`、`/health/ready`、`/segment` | ready、音频根目录限制和真实推理通过 |
+| 8078 | `/health`、`/health/ready`、`/segment` | ready、双受控根目录、候选区分块随机读取和真实推理通过 |
+| M1 引擎 | `AnalysisEngine`、`analyze/evaluate` CLI | 真实 8077/8078 闭环生成 JSON/TXT/SRT/VTT；ASR speaker 未参与算法 |
 | 鉴权 | `X-Voice-Analysis-Key` | 两个业务接口都拒绝缺失或错误密钥 |
 | 本地运行 | 前台、联合启动、停止、日志和 PID 脚本 | 两个进程联合启动、等待 ready、停止通过 |
-| 组件测试 | embedding 及 refine 测试 | 16 passed、1 skipped；4 passed |
+| 测试 | embedding、refine 及 M1 引擎测试 | embedding 16 passed、1 skipped；refine 6 passed；engine 36 passed |
 
 模型权重由相邻 Smart Badge 历史资产恢复到本地忽略目录。仓库跟踪的 [`config/model-manifest.json`](config/model-manifest.json) 记录来源提交、文件大小和 SHA256，可重复验证或重新安装。默认关闭的旧 OSD pipeline 没有迁入权重；主链使用 segmentation-3.0 powerset 输出，不依赖旧 OSD。
 
@@ -90,11 +94,21 @@ voiceanalysis/
 - 逐窗口返回 192 维归一化向量或明确失败状态；
 - 在模型、队列、协议或窗口失败时返回明确状态，不输出成功零向量。
 
-## 5. 尚未开发的产品能力
+### 4.3 M1 单录音分析
+
+给定音频路径和 `voice_analysis_input_v1` 句段文件，CLI 能够：
+
+- 按内容探测格式并单次规范化音频，后续通过受控临时 WAV 随机读取；
+- 编排 8078、窗口评分、黄金窗口、8077、NME/加权 KMeans 和句段归属；
+- 生成 `local_spk_n` 或 `unknown`、置信度、归属依据、风险与完整审计；
+- 原子写入权威 `result.json`，并从它派生 TXT、SRT 和 VTT；
+- 按 `config/evaluation.yaml` 评分 Manifest，数据不足时返回 `insufficient_dataset`。
+
+## 5. 当前契约与后续产品能力
 
 ### 5.1 统一输入输出契约
 
-需要新增独立的公开 API，接收音频文件和 ASR 句段。首版规范句段字段为：
+M1 已通过独立 CLI 契约接收音频路径和 ASR 句段；M2 仍需在此 Schema 之上新增公开异步 API。首版规范句段字段为：
 
 ```json
 {
@@ -115,11 +129,11 @@ voiceanalysis/
 - 原始 ASR speaker 可以接收、保留和回显，但只能用于审计，不能参与算法；
 - JSON 保存完整结果和审计元数据，TXT、SRT、VTT 默认以本地 speaker 或 `unknown` 前缀保留原文。
 
-输入规范化、导出展示和失败策略具有版本化默认配置并允许覆盖；算法资产阈值不属于本项可配置产品策略。
+输入规范化、导出展示和失败策略已经进入 `config/analysis.yaml` 并允许覆盖；算法资产阈值在同一配置的锁定节中记录，覆盖时直接失败。
 
 ### 5.2 录音内聚类与句段归属
 
-需要从已核验的历史算法中提取并独立实现：
+M1 已从固定历史快照中独立实现以下算法闭包：
 
 1. 根据 ASR 时间轴建立候选区域；
 2. 对 8078 返回窗口进行质量评分；
@@ -131,7 +145,7 @@ voiceanalysis/
 8. 根据余弦距离、第二候选间隔和质量门完成句段归属；
 9. 无法可靠归属的句段保留 `unknown`，不使用 ASR speaker 或人员身份填充。
 
-历史 Smart Badge 的 `app.core`、数据库、配置中心、任务队列、ASR provider、身份参考匹配和业务回写不属于该算法闭包，不能随代码迁入。
+实现没有迁入历史 Smart Badge 的 `app.core`、数据库、配置中心、任务队列、ASR provider、身份参考匹配或业务回写。大规模 NME 使用同一近邻图的稀疏求解路径，并与密集路径做重叠规模 parity。
 
 ### 5.3 异步任务 API
 
@@ -177,9 +191,9 @@ voiceanalysis/
 
 ### 5.6 评测与验收
 
-当前测试可以证明组件协议、模型加载和最小真实推理，但不能证明业务准确率。M1 冷启动验收门槛已经写入 [`config/evaluation.yaml`](config/evaluation.yaml)，后续还需要实现和执行评测链路：
+当前测试可以证明组件协议、模型加载和真实录音闭环，但不能证明业务准确率。M1 冷启动验收门槛已经写入 [`config/evaluation.yaml`](config/evaluation.yaml)，评测执行器已经实现。相邻 Smart Badge 的“录音2”已构建为 20 个派生弱标注样本并完成两次真实模型评测；它只有 12 个独立源录音，且 speaker 参考来自内部 ASR、未经人工身份核验，因此报告状态为 `insufficient_dataset`，不能替代以下正式数据集：
 
-- 复用原仓库 PriMock57、AISHELL-4 和 AliMeeting 等公开数据适配器，合法下载原始音频并生成本地评测清单；
+- 合法下载 PriMock57、AISHELL-4 和 AliMeeting 等公开原始音频并生成本地评测清单；
 - 至少 20 份、合计 60 分钟，并覆盖单人、双人、多人、重叠和噪声/远场场景的基础评测集；
 - DER ≤ 0.30、JER ≤ 0.40、说话人数完全正确率 ≥ 0.80、已分配句段准确率 ≥ 0.85、非 `unknown` 覆盖率 ≥ 0.80；
 - 模型、算法及权威阈值参数的版本快照和评测记录；首版不得以校准为理由自行改值；
@@ -187,6 +201,8 @@ voiceanalysis/
 - 前端上传、轮询、同步播放和导出测试。
 
 私有 ECAPA parity 语料没有迁入，因此对应历史测试当前跳过；它不再是 M1 基础评测的必要条件。若数据量或场景不足，评测必须报告 `insufficient_dataset`，不能判定通过。
+
+“录音2”弱标注集共 8.241 小时、7,086 个句段；场景代理覆盖单人 3、双人 3、多人 14、重叠 17、噪声/远场 6。两次真实运行均为 20/20 `success`，聚合结果稳定为 DER 0.390140、JER 0.613331、人数完全正确率 0.35、人数 MAE 1.20、已分配句段准确率 0.638470、非 unknown 覆盖率 0.551146、unknown 比例 0.448854；七项正式门槛均未达到。该结果同时受弱标注质量影响，只作为当前模型基线和后续改进证据。
 
 ### 5.7 构建与部署
 
@@ -210,6 +226,8 @@ voiceanalysis/
 三条主线不表示实施依赖顺序。端到端交付按 M1 → M2 → M3 推进；统一 API、句段 DTO、任务状态和数据保留规则冻结后，前端可以使用契约 mock 与后端并行开发。
 
 ### 6.1 M1：说话人分析编排与处理引擎
+
+实施状态：已完成代码闭环、组件兼容、真实模型冒烟和版本化契约；公开评测原始数据尚未下载，因此当前没有达到业务门槛的正式评测报告。
 
 目标：把现有 8078 窗口细化和 8077 ECAPA 向量服务编排为确定性的单录音处理引擎。
 
@@ -283,8 +301,8 @@ M1 完成后可以通过 CLI 验证算法闭环；M2 完成后可以通过 API �
 
 ## 7. 当前明确边界
 
-- 当前可启动的是两个底层模型服务，不是完整产品 API。
-- 当前没有 Web 前端、统一任务接口、录音内聚类或完整转写输出。
+- 当前可启动两个底层模型服务，并可通过 M1 CLI 完成录音内聚类和完整转写输出；这仍不是公开产品 API。
+- 当前没有 Web 前端、统一上传、异步任务状态、跨任务 Worker 调度或崩溃恢复。
 - 当前不执行 ASR；文字和时间轴必须由调用方提供。
 - 当前不持有人员身份、员工声纹、跨录音参考库或学习数据。
 - 当前没有生产部署事实，也没有公网地址。

@@ -2,7 +2,7 @@
 
 状态：current
 
-核验日期：2026-08-31
+核验日期：2026-09-01
 
 ## 地址
 
@@ -25,6 +25,17 @@
 当前 Smart Badge 环境没有 `HUGGINGFACE_ACCESS_TOKEN/HF_TOKEN` 可复制来源，因此 `.env` 中该项明确为空，且默认 `WINDOW_REFINE_ALLOW_MODEL_DOWNLOAD=0`、`HF_HUB_OFFLINE=1`。需要下载时由有权限的操作者写入本地 `.env`，下载完成后恢复离线模式。
 
 LLM、腾讯 ASR、数据库、Redis、SAP、企业微信、COS/NFS 和 Smart Badge 签名密钥都不是这两个推理进程的依赖，不复制到本仓库。
+
+`VOICEANALYSIS_TEMPORARY_ROOT` 指定 M1 规范化 WAV 的受控临时根，默认 `runtime/tmp`。8078 允许读取音频根和临时根，但仍拒绝其他主机路径。
+
+## M1 分析配置
+
+`config/analysis.yaml` 是 M1 默认配置，分为两类：
+
+- 可覆盖产品项：输入范围、组件地址、失败策略、导出展示和运行资源预算；CLI 通过 `--config <overlay.yaml>` 覆盖。
+- 锁定算法项：窗口评分、黄金窗口、NME、KMeans、半径、句段归属和风险召回。覆盖文件包含 `algorithm/profile/schema_version` 或未知顶层节时直接失败。
+
+结果记录脱敏后的有效配置、配置 SHA256、算法 Profile 和算法 SHA256。临时根记录为逻辑路径，API key 和完整主机路径不进入结果。
 
 ## 模型目录
 

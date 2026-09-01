@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from .audio_io import PcmAudio, frame_iter, load_audio
+from .audio_io import PcmAudio, audio_duration_ms, frame_iter, load_audio_region
 from .config import ServiceConfig
 
 
@@ -58,17 +58,54 @@ class PyannoteWindowRefineBackend:
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         if not self.available:
             raise RuntimeError(self.error or "pyannote model unavailable")
-        audio = load_audio(audio_path, target_sample_rate=self.cfg.sample_rate)
+        duration_ms = audio_duration_ms(audio_path)
         thresholds = _thresholds(profile)
-        frames = self._timeline(audio)
-        selected, split_events, split_event_counts = _split_candidates(
-            audio,
-            asr_candidate_windows,
-            frames,
-            thresholds=thresholds,
-            backend_name=self.backend_name,
-            speech_db_threshold=speech_db_threshold,
-        )
+        selected: list[dict[str, Any]] = []
+        split_events: list[dict[str, Any]] = []
+        split_event_counts: dict[str, int] = {}
+        candidate_results: list[dict[str, Any]] = []
+        inference_ranges: list[dict[str, int]] = []
+        total_frame_count = 0
+        model_chunk_ms = 0
+        for candidate in asr_candidate_windows:
+            candidate_id = str(candidate.get("candidate_id") or "")
+            try:
+                frames, ranges, model_chunk_ms = self._timeline_path(
+                    audio_path,
+                    duration_ms,
+                    [candidate],
+                )
+                total_frame_count += len(frames)
+                inference_ranges.extend([
+                    {**row, "candidate_id": candidate_id}
+                    for row in ranges
+                ])
+                windows, events, counts = _split_candidates(
+                    audio_path,
+                    [candidate],
+                    frames,
+                    thresholds=thresholds,
+                    backend_name=self.backend_name,
+                    speech_db_threshold=speech_db_threshold,
+                )
+                selected.extend(windows)
+                split_events.extend(events)
+                for reason, count in counts.items():
+                    split_event_counts[reason] = split_event_counts.get(reason, 0) + count
+                candidate_results.append({
+                    "candidate_id": candidate_id,
+                    "status": "success" if windows else "empty",
+                    "window_count": len(windows),
+                })
+            except Exception as exc:  # noqa: BLE001
+                candidate_results.append({
+                    "candidate_id": candidate_id,
+                    "status": "inference_failed",
+                    "window_count": 0,
+                    "error": type(exc).__name__,
+                })
+        for index, row in enumerate(selected):
+            row["window_id"] = f"speech_window_{index:03d}"
         return selected, {
             "backend": self.backend_name,
             "selected_count": len(selected),
@@ -77,7 +114,11 @@ class PyannoteWindowRefineBackend:
             "rejected": {},
             "rejected_rows": [],
             "thresholds": thresholds,
-            "frame_count": len(frames),
+            "frame_count": total_frame_count,
+            "candidate_results": candidate_results,
+            "inference_ranges": inference_ranges,
+            "model_chunk_ms": model_chunk_ms,
+            "full_audio_loaded": False,
             "model_ready": True,
             "segmentation_model_dir": str(self.cfg.segmentation_model_dir),
             "osd_model_dir": str(self.cfg.osd_model_dir),
@@ -149,6 +190,58 @@ class PyannoteWindowRefineBackend:
         if self._osd_pipeline is not None:
             frames = self._apply_osd(audio, frames)
         return frames
+
+    def _timeline_path(
+        self,
+        audio_path: str,
+        duration_ms: int,
+        candidates: list[dict[str, Any]],
+    ) -> tuple[list[SegmentationFrame], list[dict[str, int]], int]:
+        specifications = getattr(self._model, "specifications", None)
+        native_seconds = float(getattr(specifications, "duration", 10.0) or 10.0)
+        chunk_ms = max(1000, int(round(native_seconds * 1000)))
+        step_ms = max(500, chunk_ms // 2)
+        source_ranges = _merge_ranges([
+            (max(0, int(row.get("start_ms") or 0)), min(duration_ms, int(row.get("end_ms") or 0)))
+            for row in candidates
+        ])
+        frames: list[SegmentationFrame] = []
+        inference_ranges: list[dict[str, int]] = []
+        for range_start, range_end in source_ranges:
+            core_start = range_start
+            while core_start < range_end:
+                core_end = min(range_end, core_start + step_ms)
+                read_start = max(0, core_start - step_ms // 2)
+                read_end = min(duration_ms, read_start + chunk_ms)
+                if read_end - read_start < chunk_ms and read_end == duration_ms:
+                    read_start = max(0, read_end - chunk_ms)
+                audio = load_audio_region(
+                    audio_path,
+                    read_start,
+                    read_end,
+                    target_sample_rate=self.cfg.sample_rate,
+                )
+                local_frames = self._timeline(audio)
+                for frame in local_frames:
+                    shifted = SegmentationFrame(
+                        start_ms=frame.start_ms + read_start,
+                        end_ms=frame.end_ms + read_start,
+                        active_speaker_count=frame.active_speaker_count,
+                        dominant_speaker=frame.dominant_speaker,
+                        confidence=frame.confidence,
+                    )
+                    center = (shifted.start_ms + shifted.end_ms) // 2
+                    if core_start <= center < core_end:
+                        frames.append(shifted)
+                inference_ranges.append({
+                    "core_start_ms": core_start,
+                    "core_end_ms": core_end,
+                    "read_start_ms": read_start,
+                    "read_end_ms": read_end,
+                })
+                core_start = core_end
+        frames.sort(key=lambda frame: (frame.start_ms, frame.end_ms, frame.dominant_speaker))
+        return frames, inference_ranges, chunk_ms
 
     def _apply_osd(self, audio: PcmAudio, frames: list[SegmentationFrame]) -> list[SegmentationFrame]:
         if not frames:
@@ -300,7 +393,7 @@ def _softmax(data: np.ndarray) -> np.ndarray:
 
 
 def _split_candidates(
-    audio: PcmAudio,
+    audio_path: str,
     asr_candidates: list[dict[str, Any]],
     frames: list[SegmentationFrame],
     *,
@@ -333,7 +426,7 @@ def _split_candidates(
             )
         for raw_start, raw_end in _single_speaker_groups(cand_frames, blocked, max_join_gap_ms=max_gap):
             window = _build_window(
-                audio,
+                audio_path,
                 candidate,
                 cand_frames,
                 raw_start,
@@ -417,7 +510,7 @@ def _single_speaker_groups(
 
 
 def _build_window(
-    audio: PcmAudio,
+    audio_path: str,
     candidate: dict[str, Any],
     frames: list[SegmentationFrame],
     raw_start: int,
@@ -430,7 +523,8 @@ def _build_window(
 ) -> dict[str, Any]:
     start = max(int(candidate["start_ms"]), int(raw_start))
     end = min(int(candidate["end_ms"]), int(raw_end))
-    stats = _window_audio_stats(audio, start, end, speech_db_threshold=speech_db_threshold)
+    audio = load_audio_region(audio_path, start, end)
+    stats = _window_audio_stats(audio, 0, audio.duration_ms, speech_db_threshold=speech_db_threshold)
     overlap_ms = _active_ms(frames, start, end, min_active=2)
     change_count = _change_point_count(frames, start, end)
     flags: list[str] = []

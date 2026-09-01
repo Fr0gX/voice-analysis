@@ -10,6 +10,7 @@ foreach ($relative in @(
     '.env', '.env.example', 'config/services.yaml',
     'config/model-manifest.json',
     '.venv-embedding/Scripts/python.exe', '.venv-refine/Scripts/python.exe',
+    '.venv-analysis/Scripts/python.exe', 'config/analysis.yaml',
     'voice_embedding_service/app.py', 'window_refine_service/app.py',
     'scripts/start-voice-embedding.ps1', 'scripts/start-window-refine.ps1',
     'scripts/start-local-services.ps1', 'scripts/stop-local-services.ps1'
@@ -17,6 +18,12 @@ foreach ($relative in @(
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $relative))) {
         $failures.Add("missing: $relative")
     }
+}
+
+$analysisPython = Join-Path $repoRoot '.venv-analysis\Scripts\python.exe'
+if (Test-Path -LiteralPath $analysisPython) {
+    & $analysisPython -c "import sys, httpx, numpy, pydantic, scipy, sklearn, yaml; assert sys.version_info[:2] == (3, 11)"
+    if ($LASTEXITCODE -ne 0) { $failures.Add('analysis engine environment import/version validation failed') }
 }
 
 if (Test-Path -LiteralPath (Join-Path $repoRoot '.env')) {

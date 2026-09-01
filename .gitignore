@@ -16,6 +16,8 @@ runtime/logs/**
 !runtime/logs/.gitkeep
 runtime/tmp/**
 !runtime/tmp/.gitkeep
+runtime/evaluation/**
+!runtime/evaluation/.gitkeep
 
 *.wav
 *.mp3
