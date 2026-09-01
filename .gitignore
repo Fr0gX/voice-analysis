@@ -16,8 +16,13 @@ runtime/logs/**
 !runtime/logs/.gitkeep
 runtime/tmp/**
 !runtime/tmp/.gitkeep
+runtime/tasks/**
+!runtime/tasks/.gitkeep
 runtime/evaluation/**
 !runtime/evaluation/.gitkeep
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
 
 *.wav
 *.mp3

@@ -12,7 +12,9 @@ foreach ($relative in @(
     '.venv-embedding/Scripts/python.exe', '.venv-refine/Scripts/python.exe',
     '.venv-analysis/Scripts/python.exe', 'config/analysis.yaml',
     'voice_embedding_service/app.py', 'window_refine_service/app.py',
+    'voice_analysis_api/app.py', 'web/package.json', 'web/package-lock.json',
     'scripts/start-voice-embedding.ps1', 'scripts/start-window-refine.ps1',
+    'scripts/start-task-api.ps1', 'scripts/start-all-services.ps1',
     'scripts/start-local-services.ps1', 'scripts/stop-local-services.ps1'
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $relative))) {
@@ -22,7 +24,7 @@ foreach ($relative in @(
 
 $analysisPython = Join-Path $repoRoot '.venv-analysis\Scripts\python.exe'
 if (Test-Path -LiteralPath $analysisPython) {
-    & $analysisPython -c "import sys, httpx, numpy, pydantic, scipy, sklearn, yaml; assert sys.version_info[:2] == (3, 11)"
+    & $analysisPython -c "import sys, fastapi, httpx, multipart, nls, numpy, pydantic, scipy, sklearn, uvicorn, yaml; from aliyunsdkcore.client import AcsClient; assert sys.version_info[:2] == (3, 11)"
     if ($LASTEXITCODE -ne 0) { $failures.Add('analysis engine environment import/version validation failed') }
 }
 
@@ -35,6 +37,9 @@ if (Test-Path -LiteralPath (Join-Path $repoRoot '.env')) {
 
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
     $failures.Add('ffmpeg is not available on PATH')
+}
+if (-not (Get-Command node -ErrorAction SilentlyContinue) -or -not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    $failures.Add('Node.js and npm are required for the M3 Web application')
 }
 
 foreach ($relative in @(

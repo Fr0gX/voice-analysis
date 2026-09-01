@@ -6,9 +6,16 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Get-VoiceAnalysisRepoRoot
 Import-VoiceAnalysisEnv -RepoRoot $repoRoot
 & (Join-Path $PSScriptRoot 'verify-models.ps1')
+Push-Location (Join-Path $repoRoot 'web')
+try {
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { throw 'Web production build failed' }
+}
+finally { Pop-Location }
 
 $embeddingPython = Join-Path $repoRoot '.venv-embedding\Scripts\python.exe'
 $refinePython = Join-Path $repoRoot '.venv-refine\Scripts\python.exe'
+$analysisPython = Join-Path $repoRoot '.venv-analysis\Scripts\python.exe'
 $logRoot = Join-Path $repoRoot 'runtime\logs'
 $pidPath = Join-Path $repoRoot 'runtime\tmp\local-services.json'
 New-Item -ItemType Directory -Force -Path $logRoot,(Split-Path -Parent $pidPath) | Out-Null
@@ -29,7 +36,13 @@ try {
 
     Wait-VoiceAnalysisReady -Uri 'http://127.0.0.1:8077/health/ready' -TimeoutSec $ReadyTimeoutSec | Out-Null
     Wait-VoiceAnalysisReady -Uri 'http://127.0.0.1:8078/health/ready' -TimeoutSec $ReadyTimeoutSec | Out-Null
-    Write-Output "Voice Analysis model services are ready. PID file: $pidPath"
+    $taskApi = Start-Process -FilePath $analysisPython -ArgumentList @('-m','voice_analysis_api') -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logRoot 'task-api.stdout.log') -RedirectStandardError (Join-Path $logRoot 'task-api.stderr.log')
+    $started += $taskApi
+    $pidFacts = Get-Content -Raw -LiteralPath $pidPath | ConvertFrom-Json
+    $pidFacts | Add-Member -NotePropertyName task_api_pid -NotePropertyValue $taskApi.Id
+    $pidFacts | ConvertTo-Json | Set-Content -LiteralPath $pidPath -Encoding UTF8
+    Wait-VoiceAnalysisReady -Uri 'http://127.0.0.1:8076/health/ready' -TimeoutSec $ReadyTimeoutSec | Out-Null
+    Write-Output "Voice Analysis services are ready. PID file: $pidPath"
 }
 catch {
     foreach ($process in $started) {

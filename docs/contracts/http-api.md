@@ -4,13 +4,13 @@
 
 核验日期：2026-09-01
 
-除 `/health` 外，请求必须携带：
+8077/8078 除 `/health` 外，请求必须携带：
 
 ```http
 X-Voice-Analysis-Key: <VOICEANALYSIS_API_KEY>
 ```
 
-`/health/ready` 同样不需要鉴权。业务接口缺少或提供错误 key 时返回 HTTP 401。
+`/health/ready` 同样不需要鉴权。8076 M3 首版仅监听 `127.0.0.1`，不建立用户或业务接口鉴权；不得默认开放到局域网或公网。
 
 ## 8077 Voice Embedding
 
@@ -23,6 +23,25 @@ X-Voice-Analysis-Key: <VOICEANALYSIS_API_KEY>
 协议错误、请求过大、队列过载、模型未就绪和超时分别使用 HTTP 400、413、429、503、504。
 
 `/health` 始终返回组件状态；`/health/ready` 只有在真实 ECAPA 模型完成加载后返回 200，否则返回 503。
+
+## 8076 异步任务 API
+
+- `GET /health`、`GET /health/ready`
+- `POST /v1/tasks`
+- `GET /v1/tasks/{task_id}`
+- `GET /v1/tasks/{task_id}/result`
+- `GET /v1/tasks/{task_id}/audio`
+- `GET /v1/tasks/{task_id}/exports/{json|txt|srt|vtt}`
+- `POST /v1/tasks/{task_id}/cancel`
+- `DELETE /v1/tasks/{task_id}`
+
+创建接口使用 `multipart/form-data`，`audio` 必填，`deadline_sec` 为可选正数。`input_mode=provided_transcript` 时 `segments` 必填且必须是 `voice_analysis_input_v1`；`input_mode=cloud_asr` 时禁止 `segments`，并要求 `asr_provider=tencent|aliyun`、一次性 `asr_credentials` JSON 和非敏感 `asr_options` JSON。可选 `Idempotency-Key` 长度为 1 至 200；幂等摘要不包含凭据。
+
+云转写凭据只从请求交给已预留的进程内任务，不写入任务事实。公开任务增加 `input_mode/asr_provider/transcript_source`；阶段可包含 `transcribing/normalizing_transcript/exporting`。活动云转写任务在进程重启后以 `CREDENTIAL_LOST` 失败。
+
+任务状态为 `queued/running/succeeded/failed/cancelled/expired`。M1 的 `success/partial` 都映射为任务 `succeeded`，原状态保存在 `result_status` 和权威结果内。非成功任务读取结果返回 409，过期返回 410；未知或已删除任务返回 404。活动任务必须先取消再删除。
+
+取消是尽力转发：后端在 M1 阶段边界检查，不承诺中断正在执行的解码、模型请求或 CPU 计算，取消确认后的迟到结果不会发布。任务业务资产默认保留 24 小时，过期状态再保留 24 小时。
 
 ## 8078 Window Refine
 
@@ -49,4 +68,4 @@ X-Voice-Analysis-Key: <VOICEANALYSIS_API_KEY>
 
 ## 兼容边界
 
-这是新独立服务的当前组件契约，不承诺兼容 Smart Badge 已退役 sidecar。M1 编排引擎使用独立 CLI 契约；统一上传和异步任务 HTTP API 尚未定义。
+8077/8078 不承诺兼容 Smart Badge 已退役 sidecar。M1 编排引擎继续保留独立 CLI 契约；8076 是 M2 面向后续 Web 的统一异步入口。

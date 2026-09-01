@@ -10,11 +10,11 @@ if (-not (Test-Path -LiteralPath $pidPath)) {
 }
 
 $pids = Get-Content -Raw -LiteralPath $pidPath | ConvertFrom-Json
-foreach ($property in @('voice_embedding_pid','window_refine_pid')) {
+foreach ($property in @('task_api_pid','voice_embedding_pid','window_refine_pid')) {
     $processId = [int]$pids.$property
     if ($processId -gt 0 -and (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
         Stop-Process -Id $processId -Force
     }
 }
 Remove-Item -LiteralPath $pidPath -Force
-Write-Output 'Local Voice Analysis model services stopped.'
+Write-Output 'Local Voice Analysis services stopped.'

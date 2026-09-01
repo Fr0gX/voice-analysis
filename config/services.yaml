@@ -7,6 +7,11 @@ authentication:
   health_requires_auth: false
 
 services:
+  task_api:
+    listen: 127.0.0.1:8076
+    local_base_url: http://127.0.0.1:8076
+    health_path: /health
+    ready_path: /health/ready
   voice_embedding:
     listen: 0.0.0.0:8077
     local_base_url: http://127.0.0.1:8077
@@ -58,3 +63,15 @@ runtime:
   log_root: runtime/logs
   persist_embeddings: false
   cross_recording_identity: false
+
+task_api:
+  authentication: none
+  local_only: true
+  task_root: runtime/tasks
+  retention_seconds: 86400
+  expired_metadata_seconds: 86400
+  cleanup_interval_seconds: 300
+  max_segments_bytes: 16777216
+  max_audio_bytes: 1073741824
+  backend_slots: 1
+  shutdown_grace_seconds: 10

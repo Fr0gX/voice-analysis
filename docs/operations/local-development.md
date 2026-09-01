@@ -10,6 +10,7 @@
 - `uv`
 - Git 与 Git LFS
 - FFmpeg
+- Node.js 与 npm
 - 可用磁盘空间：三个 Python 环境、模型及长音频临时 WAV 至少预留 16 GiB
 
 ## 初始化秘密
@@ -27,6 +28,18 @@
 ```
 
 该脚本安装/定位 Python 3.11，创建 `.venv-embedding`、`.venv-refine` 与 `.venv-analysis`，再分别安装锁定依赖。分析环境不加载 Torch；脚本不会下载模型。
+
+M3 Web 首次运行还需要安装、测试并构建前端：
+
+```powershell
+Push-Location web
+npm install
+npm test
+npm run build
+Pop-Location
+```
+
+生产构建由 8076 同源托管在 `http://127.0.0.1:8076/`。开发服务器只监听 `127.0.0.1:5173` 并把 `/v1`、`/health` 代理到 8076。
 
 ## 模型
 
@@ -47,7 +60,45 @@
 
 验证检查目录、配置、秘密、Python 版本、FFmpeg、服务源码和模型完整性。模型缺失会报告 `not-ready`，不会被当成已可启动。
 
-## 启动与停止
+## 一键启动全套服务
+
+完成首次环境、前端依赖和模型安装后，日常启动只需：
+
+```powershell
+./scripts/start-all-services.ps1
+```
+
+脚本按固定顺序执行：
+
+1. `verify-workspace.ps1` 检查三套 Python、Node/npm、FFmpeg、配置、密钥和模型；
+2. 使用已安装的 npm 依赖构建 `web/dist`；
+3. 后台启动 8077 ECAPA 和 8078 pyannote，等待两个真实模型 `/health/ready`；
+4. 后台启动 8076 Web/Task API，并等待聚合 `/health/ready`；
+5. 打印页面、健康检查、日志和停止命令。
+
+模型首次加载较慢时可调整等待时间：
+
+```powershell
+./scripts/start-all-services.ps1 -ReadyTimeoutSec 600
+```
+
+已经单独执行过工作区检查时可以使用 `-SkipWorkspaceVerification`，但脚本仍会验证模型、构建 Web 并等待各服务 ready。页面地址为 `http://127.0.0.1:8076/`；8076 只监听本机。
+
+脚本只记录和管理本次创建的三个进程，PID 文件为 `runtime/tmp/local-services.json`。重复启动且 PID 文件仍存在时会拒绝执行，先核对状态并使用停止脚本：
+
+```powershell
+./scripts/stop-local-services.ps1
+```
+
+日志分别位于：
+
+- `runtime/logs/task-api.stdout.log` 与 `task-api.stderr.log`
+- `runtime/logs/voice-embedding.stdout.log` 与 `voice-embedding.stderr.log`
+- `runtime/logs/window-refine.stdout.log` 与 `window-refine.stderr.log`
+
+启动失败时联合启动器会停止本次已创建的进程并删除 PID 文件。常见原因依次检查：`npm install` 是否完成、模型文件摘要是否通过、`.env` 是否存在、8076/8077/8078 是否被其他进程占用，以及对应 stderr 日志。脚本不会停止未由它创建的其他项目进程。
+
+## 分组件启动与停止
 
 分别以前台方式启动：
 
@@ -56,7 +107,7 @@
 ./scripts/start-window-refine.ps1
 ```
 
-联合后台启动、等待真实模型 ready、执行探针并停止：
+底层联合启动脚本、执行探针并停止：
 
 ```powershell
 ./scripts/start-local-services.ps1
@@ -64,7 +115,13 @@
 ./scripts/stop-local-services.ps1
 ```
 
-联合启动器只记录并管理本次创建的两个 PID，日志写入 `runtime/logs`。不要用该脚本停止其他端口或其他项目进程。
+`start-all-services.ps1` 是日常使用入口；`start-local-services.ps1` 是它调用的底层联合启动器。只以前台方式启动任务 API 可执行：
+
+```powershell
+./scripts/start-task-api.ps1
+```
+
+提交任务使用 multipart `audio` 和 `segments`，随后轮询 `/v1/tasks/{task_id}`；完整字段和状态语义见 HTTP 契约。任务资产位于 Git 忽略的 `runtime/tasks`，默认 24 小时后过期。
 
 ## 测试
 
@@ -94,6 +151,14 @@ ECAPA 私有 parity 语料没有迁入，对应测试会跳过。组件测试和
   --manifest <dataset.jsonl> `
   --report <report.json>
 ```
+
+评测完成后不能只读取报告状态机械验收。监督复核至少包括：
+
+1. 确认参考标签在单份录音内代表不同自然人；标签名称中的业务角色文字不参与裁决。
+2. 确认当前 DER/JER 只评价固定转写句段的自然人归属和拒识，不解释为独立语音活动检测或精确说话人边界结果。
+3. 同时检查结果中的全部实际建簇数和最终使用标签数；当前自动人数指标只使用后者，可能掩盖未分配到句段的多余簇。
+4. 联合解释自然人混淆、拒识、已归属准确率和覆盖率；非 `unknown` 覆盖率与 `unknown` 比例互为补数，不当作两份独立证据。
+5. 将数据资格、数值门槛和用户里程碑验收分开记录。用户接受已知风险可以使成果验收通过，但不得修改实际指标或伪写门槛通过。
 
 M1 不恢复崩溃任务；异常遗留的 `runtime/tmp/<run_id>` 可以在确认没有分析进程使用后人工清理。最终输出目录不应放在 `runtime/tmp` 下。
 

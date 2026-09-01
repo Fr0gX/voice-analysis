@@ -15,6 +15,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Window refine tests failed' }
     & $analysisPython -m pytest voice_analysis_engine/tests -q
     if ($LASTEXITCODE -ne 0) { throw 'Analysis engine tests failed' }
+    & $analysisPython -m pytest voice_analysis_api/tests -q
+    if ($LASTEXITCODE -ne 0) { throw 'Task API tests failed' }
+    Push-Location (Join-Path $repoRoot 'web')
+    try {
+        & npm test
+        if ($LASTEXITCODE -ne 0) { throw 'Web component tests failed' }
+        & npm run build
+        if ($LASTEXITCODE -ne 0) { throw 'Web production build failed' }
+    }
+    finally { Pop-Location }
 }
 finally {
     Pop-Location
